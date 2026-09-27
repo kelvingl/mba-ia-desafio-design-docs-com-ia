@@ -35,6 +35,17 @@ O ponto de integração mais sensível com o código existente é `OrderService.
 
 > [09:41] Diego: Essencial. Se ficar fora da transação, perde a garantia toda.
 
+Visão geral do fluxo:
+
+```
+changeStatus (tx) ──insere──> webhook_outbox ──lê a cada 2s──> worker ──HTTP + HMAC──> cliente
+                                    │                             │ falhou
+                              snapshot do payload                 ├─ retry com backoff (até 5x)
+                                                                  └─ esgotou ─> webhook_dead_letter
+                                                                                      │
+                            webhook_outbox <── replay manual (ADMIN) ─────────────────┘
+```
+
 O detalhamento de fluxos passo a passo (criação do evento, processamento pelo worker, retry, DLQ), contratos HTTP com payloads de exemplo, modelagem de dados e matriz de erros está no [FDD](FDD.md) — não é repetido aqui.
 
 ## Decisões Relacionadas
@@ -71,6 +82,12 @@ Todas as decisões abaixo estão fechadas; esta RFC não as reabre, apenas conso
 
 > [09:21] Sofia: Outra coisa importante: cada endpoint de webhook do cliente tem que ter uma secret única. Não é uma secret global da nossa plataforma. Senão se vaza uma, vaza tudo.
 
+**5. Trigger de banco para entrega reativa, em vez de polling.** Descartada porque o MySQL não tem listener nativo equivalente ao `NOTIFY/LISTEN` do Postgres; um trigger só executa SQL e não avisa um processo externo (trade-off: reatividade vs. soluções improvisadas para notificar o worker). Ver [ADR-002](adrs/ADR-002-worker-dedicado-com-polling.md) (`[09:09] Diego`).
+
+**6. Teto de 3 tentativas de retry.** Descartada por esgotar em cerca de 30 minutos, insuficiente para indisponibilidades reais de horas (trade-off: falha mais rápida vs. perda de eventos legítimos). Ver [ADR-003](adrs/ADR-003-retry-com-backoff-exponencial.md) (`[09:16] Bruno/Diego`).
+
+**7. Retry indefinido.** Descartada porque deixaria o evento pendurado para sempre se o cliente sumisse (trade-off: cobertura total vs. ausência de ponto de falha definitiva). Ver [ADR-003](adrs/ADR-003-retry-com-backoff-exponencial.md) (`[09:15] Diego`).
+
 ## Questões em Aberto
 
 **1. Rate limiting de envio para o cliente.** Levantado como preocupação, mas explicitamente não decidido — a equipe optou por observar antes de implementar.
@@ -86,6 +103,12 @@ Todas as decisões abaixo estão fechadas; esta RFC não as reabre, apenas conso
 **3. Política de arquivamento de eventos já entregues na outbox.** Mencionada apenas de forma aproximada, sem prazo ou mecanismo fechados, e fora do escopo desta feature.
 
 > [09:08] Diego: A tabela tem índice no campo de status (pendente, processando, falhou, entregue) e em created_at. Worker lê só os pendentes em batch pequeno, processa, marca como entregue. Linhas entregues a gente arquiva depois de 30 dias ou assim, fora do escopo dessa feature.
+
+**4. Endurecimento da autorização do CRUD de webhooks.** Nesta fase, qualquer papel autenticado pode configurar webhooks (só o replay exige ADMIN); a segurança sinalizou que isso pode ser restringido depois, sem definir quando nem como.
+
+> [09:36] Marcos: O resto do CRUD de configuração de webhook pode ser qualquer role autenticada?
+
+> [09:37] Sofia: Por enquanto sim. Mais pra frente a gente pode endurecer.
 
 ## Impacto e Riscos
 

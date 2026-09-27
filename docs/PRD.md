@@ -73,6 +73,7 @@ Não há, na transcrição, uma meta formal de taxa de sucesso de entrega pós-l
 - **Webhooks inbound** (cliente enviando dados para a plataforma) — descartado no início da reunião; o escopo é exclusivamente outbound (`[09:02]-[09:03] Sofia/Marcos`).
 - **Rate limiting de envio ao cliente** — levantado como preocupação, mas não decidido; a equipe optou por observar antes de agir (`[09:38]-[09:39] Diego/Larissa`).
 - **Arquivamento automático de eventos já entregues** — mencionado como necessidade futura, mas fora do escopo desta feature (`[09:08] Diego`).
+- **Restrição de papel no CRUD de webhooks** — nesta fase qualquer usuário autenticado configura webhooks; endurecer essa permissão ficou para depois (`[09:37] Sofia`).
 
 ## 6. Requisitos Funcionais
 

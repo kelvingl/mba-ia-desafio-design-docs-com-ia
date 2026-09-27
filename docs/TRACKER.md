@@ -16,6 +16,7 @@ Mapeia cada item identificável nos documentos do pacote (`docs/PRD.md`, `docs/R
 | PRD-FORA-03 | docs/PRD.md | Restrição | Webhooks inbound fora de escopo | TRANSCRICAO | [09:02] Marcos |
 | PRD-FORA-04 | docs/PRD.md | Restrição | Rate limiting de envio não decidido, adiado | TRANSCRICAO | [09:39] Larissa |
 | PRD-FORA-05 | docs/PRD.md | Restrição | Arquivamento automático de eventos entregues fora de escopo | TRANSCRICAO | [09:08] Diego |
+| PRD-FORA-06 | docs/PRD.md | Restrição | Restrição de papel no CRUD de webhooks adiada | TRANSCRICAO | [09:37] Sofia |
 | PRD-RF-01 | docs/PRD.md | Requisito Funcional | Cadastrar webhook (URL, status, secret gerada e devolvida) | TRANSCRICAO | [09:31] Marcos |
 | PRD-RF-02 | docs/PRD.md | Requisito Funcional | Editar webhook cadastrado | TRANSCRICAO | [09:33] Bruno |
 | PRD-RF-03 | docs/PRD.md | Requisito Funcional | Remover webhook cadastrado | TRANSCRICAO | [09:33] Bruno |
@@ -70,9 +71,13 @@ Mapeia cada item identificável nos documentos do pacote (`docs/PRD.md`, `docs/R
 | RFC-ALT-02 | docs/RFC.md | Trade-off | Fila externa dedicada (Redis Streams) descartada | TRANSCRICAO | [09:07] Diego |
 | RFC-ALT-03 | docs/RFC.md | Trade-off | Garantia exactly-once descartada | TRANSCRICAO | [09:25] Diego |
 | RFC-ALT-04 | docs/RFC.md | Trade-off | Secret HMAC global descartada | TRANSCRICAO | [09:21] Sofia |
+| RFC-ALT-05 | docs/RFC.md | Trade-off | Trigger de banco para entrega reativa descartado | TRANSCRICAO | [09:09] Diego |
+| RFC-ALT-06 | docs/RFC.md | Trade-off | Teto de 3 tentativas de retry descartado | TRANSCRICAO | [09:16] Diego |
+| RFC-ALT-07 | docs/RFC.md | Trade-off | Retry indefinido descartado | TRANSCRICAO | [09:15] Diego |
 | RFC-OPEN-01 | docs/RFC.md | Restrição | Rate limiting de envio não decidido | TRANSCRICAO | [09:39] Larissa |
 | RFC-OPEN-02 | docs/RFC.md | Restrição | Ordenação global não garantida ao escalar workers | TRANSCRICAO | [09:13] Diego |
 | RFC-OPEN-03 | docs/RFC.md | Restrição | Política de arquivamento de eventos não fechada | TRANSCRICAO | [09:08] Diego |
+| RFC-OPEN-04 | docs/RFC.md | Restrição | Endurecimento da autorização do CRUD não decidido | TRANSCRICAO | [09:37] Sofia |
 | RFC-IMP-01 | docs/RFC.md | Risco | Novo processo em produção (worker) | TRANSCRICAO | [09:11] Diego |
 | RFC-IMP-02 | docs/RFC.md | Risco | Risco de segurança conhecido (vazamento de secret) | TRANSCRICAO | [09:22] Diego |
 | RFC-IMP-03 | docs/RFC.md | Restrição | Revisão de segurança como bloqueio de cronograma | TRANSCRICAO | [09:46] Sofia |
@@ -117,6 +122,8 @@ Mapeia cada item identificável nos documentos do pacote (`docs/PRD.md`, `docs/R
 | FDD-INT-06 | docs/FDD.md | Restrição | Worker reutiliza `createPrismaClient()` | CODIGO | src/config/database.ts |
 | FDD-INT-07 | docs/FDD.md | Restrição | Worker e módulo usam o logger Pino já exportado | CODIGO | src/shared/logger/index.ts |
 | FDD-INT-08 | docs/FDD.md | Restrição | Novos modelos seguem convenção de `id` UUID do schema | CODIGO | prisma/schema.prisma |
+| FDD-INT-09 | docs/FDD.md | Restrição | Listagens usam o envelope `paginated()` existente | CODIGO | src/shared/http/response.ts |
+| FDD-INT-10 | docs/FDD.md | Restrição | `requestId` do middleware reaproveitado para correlação de logs | CODIGO | src/middlewares/request-logger.middleware.ts |
 | FDD-AC-01 | docs/FDD.md | Critério de Aceitação | Payload nunca contém `items` e nunca excede 64KB | TRANSCRICAO | [09:24] Diego |
 | FDD-AC-02 | docs/FDD.md | Critério de Aceitação | Filtro de eventos aplicado na inserção, não no envio | TRANSCRICAO | [09:34] Diego |
 | FDD-AC-03 | docs/FDD.md | Critério de Aceitação | URL não-HTTPS rejeitada antes de qualquer persistência | TRANSCRICAO | [09:23] Sofia |
@@ -150,7 +157,7 @@ Mapeia cada item identificável nos documentos do pacote (`docs/PRD.md`, `docs/R
 
 ## Cobertura
 
-- **Total de linhas:** 143.
-- **Fonte = TRANSCRICAO:** 117 linhas (~82%), acima do mínimo de 70%.
-- **Fonte = CODIGO:** 26 linhas (~18%), acima do mínimo de 5.
+- **Total de linhas:** 150.
+- **Fonte = TRANSCRICAO:** 122 linhas (~81%), acima do mínimo de 70%.
+- **Fonte = CODIGO:** 28 linhas (~19%), acima do mínimo de 5.
 - **Itens não rastreados individualmente:** consequências (positivas/negativas) de cada ADR e alguns critérios de aceite técnicos do FDD que apenas reformulam, em nível de verificação, um requisito já rastreado acima (ex.: os demais itens de `FDD-AC-*` além dos 4 listados) — omitidos para não duplicar a mesma origem sob um ID diferente, não por falta de rastreabilidade.

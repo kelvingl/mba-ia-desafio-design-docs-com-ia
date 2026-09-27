@@ -71,6 +71,7 @@ Todas as tabelas novas seguem a convenção de `id` UUID (`String @id @default(u
 | `status` | Enum | `PENDENTE` \| `PROCESSANDO` \| `ENTREGUE` \| `FALHOU` (`[09:08] Diego`) |
 | `attemptCount` | Int | quantas tentativas já ocorreram (para decidir o próximo backoff, ADR-003) |
 | `nextAttemptAt` | DateTime | quando a próxima tentativa pode ocorrer (implementa o backoff) |
+| `requestId` | String? | `requestId` da requisição que mudou o status (`request-logger.middleware.ts`), para correlação de logs — decisão desta FDD |
 | `createdAt` | DateTime | usado para ordenação do polling (`[09:12] Diego`, ordem por `order_id`) |
 
 Índices em `status` e `createdAt`, conforme decidido: `[09:08] Diego: A tabela tem índice no campo de status (pendente, processando, falhou, entregue) e em created_at.`
@@ -183,18 +184,21 @@ Erros possíveis: `400 VALIDATION_ERROR` (URL não HTTPS ou `events` com status 
 
 ### 6.2 `GET /api/v1/webhooks?customerId=...` — listar webhooks
 
-Response `200 OK` (secret nunca é retornada em listagem — decisão desta FDD):
+Response `200 OK`, no envelope paginado já usado pelo projeto (`paginated()` em `src/shared/http/response.ts`). A secret nunca é retornada em listagem (decisão desta FDD):
 ```json
-[
-  {
-    "id": "9c2e7a10-...",
-    "customerId": "3f1b6e2a-...",
-    "url": "https://integrations.atlascomercial.com/hooks/orders",
-    "events": ["SHIPPED", "DELIVERED", "CANCELLED"],
-    "active": true,
-    "createdAt": "2026-01-15T13:00:00.000Z"
-  }
-]
+{
+  "data": [
+    {
+      "id": "9c2e7a10-...",
+      "customerId": "3f1b6e2a-...",
+      "url": "https://integrations.atlascomercial.com/hooks/orders",
+      "events": ["SHIPPED", "DELIVERED", "CANCELLED"],
+      "active": true,
+      "createdAt": "2026-01-15T13:00:00.000Z"
+    }
+  ],
+  "pagination": { "page": 1, "pageSize": 20, "total": 1, "totalPages": 1 }
+}
 ```
 
 ### 6.3 `PATCH /api/v1/webhooks/:id` — editar webhook
@@ -233,11 +237,12 @@ Erros: `404 WEBHOOK_NOT_FOUND`, `409 WEBHOOK_INACTIVE` (rotação de webhook des
 
 > [09:34] Marcos: Mais um: o cliente precisa conseguir ver o histórico de entregas. Tipo "esses são os últimos 100 webhooks que vocês mandaram pra mim, sucesso/falha, payload, response, tempo de resposta". GET /webhooks/:id/deliveries.
 
-Query: `?limit=100` (padrão e máximo 100, conforme literal da fala de Marcos).
+Query: `?page=1&pageSize=100` (`pageSize` padrão e máximo 100, conforme literal da fala de Marcos).
 
-Response `200 OK`:
+Response `200 OK`, no mesmo envelope `paginated()` de `src/shared/http/response.ts`:
 ```json
-[
+{
+  "data": [
   {
     "id": "d41f2e90-...",
     "eventId": "7b6c5d4e-...",
@@ -256,7 +261,9 @@ Response `200 OK`:
     "attemptedAt": "2026-01-15T12:59:00.000Z",
     "payload": { "event_id": "7b6c5d4e-...", "event_type": "order.status_changed", "to_status": "SHIPPED" }
   }
-]
+  ],
+  "pagination": { "page": 1, "pageSize": 100, "total": 2, "totalPages": 1 }
+}
 ```
 
 Erros: `404 WEBHOOK_NOT_FOUND`.
@@ -348,7 +355,7 @@ Segue o padrão de `AppError` (`src/shared/errors/app-error.ts`): `statusCode`, 
 
 **Logs:** usar o logger Pino já existente (`src/shared/logger/index.ts`), sem nova biblioteca (ADR-007). Cada tentativa de entrega deve logar `eventId`, `subscriptionId`, `customerId`, `attemptNumber`, `httpStatusCode`, `durationMs`, seguindo o mesmo padrão estruturado de `request-logger.middleware.ts` e `error.middleware.ts`. O replay administrativo deve logar o `userId` de quem executou a ação (`[09:36] Sofia`, requisito explícito de auditoria).
 
-**Tracing:** o projeto **não possui hoje** nenhuma instrumentação de tracing distribuído (não há OpenTelemetry ou equivalente no código-fonte examinado), e a transcrição não discute o tema. Nesta fase, a rastreabilidade fim-a-fim de um evento (da inserção na outbox até a entrega ou DLQ) é feita por **correlação manual via `event_id`** em todos os logs relacionados — não por tracing distribuído formal. Isso é registrado aqui como uma limitação conhecida, não uma decisão de arquitetura.
+**Tracing:** o projeto **não possui hoje** nenhuma instrumentação de tracing distribuído (não há OpenTelemetry ou equivalente no código-fonte examinado), e a transcrição não discute o tema. Nesta fase, a rastreabilidade fim-a-fim de um evento (da inserção na outbox até a entrega ou DLQ) é feita por **correlação via `event_id`** em todos os logs relacionados — não por tracing distribuído formal. Para ligar o evento à requisição HTTP que o originou, o `requestId` já gerado por `src/middlewares/request-logger.middleware.ts` (header `X-Request-Id`) deve ser gravado junto ao evento e repetido nos logs do worker, fechando a cadeia requisição → `changeStatus` → outbox → tentativas de entrega. Isso é registrado aqui como uma limitação conhecida, não uma decisão de arquitetura.
 
 ## 10. Dependências e Compatibilidade
 
@@ -377,6 +384,8 @@ Segue o padrão de `AppError` (`src/shared/errors/app-error.ts`): `statusCode`, 
 - **`src/routes/index.ts`** — `buildApiRouter` ganha dois novos mounts (`/webhooks` e `/admin/webhooks`), seguindo o mesmo padrão de `router.use('/orders', buildOrderRouter(controllers.orders))` já existente.
 - **`src/config/database.ts`** — `src/worker.ts` reutiliza a função `createPrismaClient()` para abrir sua própria instância de `PrismaClient`, em vez de compartilhar o singleton `prisma` usado pela API (`[09:29]-[09:30] Diego/Bruno`).
 - **`src/shared/logger/index.ts`** — o worker e todos os componentes do módulo de webhooks usam a mesma instância `logger` (Pino) já exportada, sem nova biblioteca de logging (`[09:29] Bruno`).
+- **`src/shared/http/response.ts`** — os endpoints de listagem (`GET /webhooks` e `GET /webhooks/:id/deliveries`) retornam no envelope de `paginated()`/`buildPagination()` já existente, sem criar um formato novo de paginação.
+- **`src/middlewares/request-logger.middleware.ts`** — o `requestId` que o middleware já gera e devolve em `X-Request-Id` é reaproveitado como chave de correlação entre a requisição de mudança de status e os logs do worker.
 - **`prisma/schema.prisma`** — recebe os novos modelos `WebhookSubscription`, `WebhookOutbox`, `WebhookDeadLetter` e `WebhookDelivery`, todos seguindo a convenção `String @id @default(uuid()) @db.Char(36)` já usada nos modelos existentes.
 
 ## 13. Critérios de Aceite Técnicos
