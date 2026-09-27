@@ -113,7 +113,7 @@ A transcrição pede explicitamente um histórico de entregas por webhook (`[09:
 
    > [09:41] Bruno: Vai me obrigar a passar um repository do webhook pro OrderService ou uma função de "enqueue event". Vou propor uma função publishWebhookEvent(tx, order, fromStatus, toStatus) que aceita o tx client da transação atual. Aí o order.service chama isso.
 
-   `publishWebhookEvent(tx, order, fromStatus, toStatus)` (proposta em `src/modules/webhooks/webhook.events.ts` ou arquivo equivalente dentro do novo módulo):
+   `publishWebhookEvent(tx, order, fromStatus, toStatus)` (em um arquivo novo dentro do módulo `src/modules/webhooks/`; o nome do arquivo não foi definido na reunião):
    - Busca em `webhook_subscription` os endpoints `active = true` do `customerId` do pedido cujo `events` contém `toStatus`.
    - Se nenhum endpoint quiser aquele status, **não insere nada** (`[09:33]–[09:34] Bruno/Diego`).
    - Para cada endpoint encontrado, monta o payload snapshot (ver [Contratos Públicos](#6-contratos-públicos)) e insere uma linha em `webhook_outbox` com `status = PENDENTE`, `eventId = randomUUID()`.
@@ -184,6 +184,12 @@ Erros possíveis: `400 VALIDATION_ERROR` (URL não HTTPS ou `events` com status 
 
 ### 6.2 `GET /api/v1/webhooks?customerId=...` — listar webhooks
 
+Request:
+```http
+GET /api/v1/webhooks?customerId=3f1b6e2a-1234-4c9e-9a11-abc123456789&page=1&pageSize=20
+Authorization: Bearer <jwt>
+```
+
 Response `200 OK`, no envelope paginado já usado pelo projeto (`paginated()` em `src/shared/http/response.ts`). A secret nunca é retornada em listagem (decisão desta FDD):
 ```json
 {
@@ -203,24 +209,50 @@ Response `200 OK`, no envelope paginado já usado pelo projeto (`paginated()` em
 
 ### 6.3 `PATCH /api/v1/webhooks/:id` — editar webhook
 
-Request (todos os campos opcionais):
-```json
+Request (todos os campos do body são opcionais):
+```http
+PATCH /api/v1/webhooks/9c2e7a10-...
+Authorization: Bearer <jwt>
+Content-Type: application/json
+
 { "url": "https://integrations.atlascomercial.com/hooks/orders/v2", "events": ["DELIVERED"], "active": true }
 ```
 
-Response `200 OK`: mesmo formato do item 6.2 (sem secret).
+Response `200 OK` (sem secret):
+```json
+{
+  "id": "9c2e7a10-...",
+  "customerId": "3f1b6e2a-...",
+  "url": "https://integrations.atlascomercial.com/hooks/orders/v2",
+  "events": ["DELIVERED"],
+  "active": true,
+  "updatedAt": "2026-01-15T14:00:00.000Z"
+}
+```
 
 Erros: `404 WEBHOOK_NOT_FOUND`, `400 VALIDATION_ERROR`.
 
 ### 6.4 `DELETE /api/v1/webhooks/:id` — remover webhook
 
-Response `204 No Content`.
+Request:
+```http
+DELETE /api/v1/webhooks/9c2e7a10-...
+Authorization: Bearer <jwt>
+```
+
+Response `204 No Content` (sem corpo).
 
 Erros: `404 WEBHOOK_NOT_FOUND`.
 
 ### 6.5 `POST /api/v1/webhooks/:id/secret/rotate` — rotacionar secret
 
 > [09:21] Sofia: Sim. E a secret tem que ser rotacionável. Endpoint pro cliente conseguir pedir nova secret pela API. Quando ele rotaciona, a antiga fica válida por 24 horas em paralelo, pra ele ter tempo de migrar os sistemas dele. Depois disso, a antiga morre.
+
+Request (sem corpo):
+```http
+POST /api/v1/webhooks/9c2e7a10-.../secret/rotate
+Authorization: Bearer <jwt>
+```
 
 Response `200 OK`:
 ```json
@@ -238,6 +270,12 @@ Erros: `404 WEBHOOK_NOT_FOUND`, `409 WEBHOOK_INACTIVE` (rotação de webhook des
 > [09:34] Marcos: Mais um: o cliente precisa conseguir ver o histórico de entregas. Tipo "esses são os últimos 100 webhooks que vocês mandaram pra mim, sucesso/falha, payload, response, tempo de resposta". GET /webhooks/:id/deliveries.
 
 Query: `?page=1&pageSize=100` (`pageSize` padrão e máximo 100, conforme literal da fala de Marcos).
+
+Request:
+```http
+GET /api/v1/webhooks/9c2e7a10-.../deliveries?page=1&pageSize=100
+Authorization: Bearer <jwt>
+```
 
 Response `200 OK`, no mesmo envelope `paginated()` de `src/shared/http/response.ts`:
 ```json
@@ -273,6 +311,12 @@ Erros: `404 WEBHOOK_NOT_FOUND`.
 > [09:18] Diego: Manual via endpoint admin. Tipo um POST /admin/webhooks/dead-letter/:id/replay. Recoloca na outbox como pendente.
 
 Requer `requireRole('ADMIN')` (`[09:36] Larissa`).
+
+Request (sem corpo; o JWT precisa ser de um usuário com papel `ADMIN`):
+```http
+POST /api/v1/admin/webhooks/dead-letter/a1b2c3d4-.../replay
+Authorization: Bearer <jwt-admin>
+```
 
 Response `202 Accepted`:
 ```json
